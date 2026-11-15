@@ -20,7 +20,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ro.hero.irremote.ui.AppViewModel
+import ro.hero.irremote.ui.CodeDatabaseScreen
 import ro.hero.irremote.ui.CodeFinderScreen
+import ro.hero.irremote.ui.CodeSetScreen
+import ro.hero.irremote.ui.LampWizardScreen
 import ro.hero.irremote.ui.HelpScreen
 import ro.hero.irremote.ui.LearnScreen
 import ro.hero.irremote.ui.LibraryScreen
@@ -57,8 +60,12 @@ fun App(vm: AppViewModel = viewModel()) {
     val route = stack.last()
     val parts = route.split('/')
     when (parts[0]) {
-        "library" -> LibraryScreen(vm, openRemote = { go("remote/$it") }, openHelp = { go("help") }, openFinder = { go("finder") })
-        "remote" -> RemoteScreen(vm, parts[1], onBack = ::back, onLearn = { b -> go("learn/${parts[1]}/$b") })
+        "library" -> LibraryScreen(vm, openRemote = { go("remote/$it") }, openHelp = { go("help") }, openFinder = { go("finder") },
+            openDatabase = { go("db") }, openWizard = { go("wizard") })
+        "remote" -> RemoteScreen(vm, parts[1], onBack = ::back, onLearn = { b -> go("learn/${parts[1]}/$b") }, onWizard = { go("wizard") })
+        "db" -> CodeDatabaseScreen(vm, onBack = ::back, openSet = { go("set/$it") }, openWizard = { go("wizard") })
+        "set" -> CodeSetScreen(vm, parts[1].toInt(), onBack = ::back, openRemote = { stack = listOf("library", "remote/$it") })
+        "wizard" -> LampWizardScreen(vm, onBack = ::back, onDone = { stack = listOf("library", "remote/$it") })
         "learn" -> LearnScreen(vm, parts[1], parts[2], onBack = ::back, openFinder = { go("finder/${parts[1]}/${parts[2]}") })
         "finder" -> CodeFinderScreen(vm, parts.getOrNull(1), parts.getOrNull(2), onBack = ::back)
         "help" -> HelpScreen(vm, onBack = ::back)

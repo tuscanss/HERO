@@ -9,6 +9,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import ro.hero.irremote.data.CodeDatabase
+import ro.hero.irremote.data.CodeSet
 import ro.hero.irremote.data.Remote
 import ro.hero.irremote.data.RemoteButton
 import ro.hero.irremote.data.RemoteRepository
@@ -33,6 +37,36 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val err = transmitter.send(code, repeats)
         if (err != null) toast(err)
         return err == null
+    }
+
+    // ---------------- Baza de coduri preinstalată ----------------
+    private val _codeSets = MutableStateFlow<List<CodeSet>?>(null)
+    val codeSets = _codeSets.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            _codeSets.value = withContext(Dispatchers.IO) { CodeDatabase.load(getApplication<Application>().assets) }
+        }
+    }
+
+    /**
+     * Pune codurile unui set pe telecomanda Novecento: înlocuiește șablonul gol dacă există,
+     * altfel creează o telecomandă nouă. Întoarce ID-ul telecomenzii.
+     */
+    fun applyToNovecento(set: CodeSet): String {
+        val existing = repo.remotes.value.firstOrNull { it.brand.equals("Novecento", true) && it.learnedCount == 0 }
+        val remote = set.toRemote(existing?.name ?: "Plafonieră Novecento", brandOverride = "Novecento")
+            .let { if (existing != null) it.copy(id = existing.id) else it }
+        repo.upsert(remote)
+        toast("Am salvat ${remote.buttons.size} butoane pe „${remote.name}”")
+        return remote.id
+    }
+
+    fun addCodeSet(set: CodeSet): String {
+        val r = set.toRemote(set.title)
+        repo.upsert(r)
+        toast("„${r.name}” a fost adăugată în telecomenzile tale")
+        return r.id
     }
 
     // ---------------- Căutătorul de coduri (scanare NEC) ----------------

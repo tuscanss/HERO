@@ -22,7 +22,10 @@ import ro.hero.irremote.data.Remote
 import ro.hero.irremote.data.Templates
 
 @Composable
-fun LibraryScreen(vm: AppViewModel, openRemote: (String) -> Unit, openHelp: () -> Unit, openFinder: () -> Unit) {
+fun LibraryScreen(
+    vm: AppViewModel, openRemote: (String) -> Unit, openHelp: () -> Unit, openFinder: () -> Unit,
+    openDatabase: () -> Unit, openWizard: () -> Unit,
+) {
     val remotes by vm.repo.remotes.collectAsState()
     var query by remember { mutableStateOf("") }
     var showNew by remember { mutableStateOf(false) }
@@ -45,6 +48,7 @@ fun LibraryScreen(vm: AppViewModel, openRemote: (String) -> Unit, openHelp: () -
     AppScaffold(
         vm, "Telecomenzile mele",
         actions = {
+            IconButton(onClick = openDatabase) { Icon(Icons.Filled.LibraryBooks, "Coduri preinstalate") }
             IconButton(onClick = openFinder) { Icon(Icons.Filled.ManageSearch, "Căutător de coduri") }
             IconButton(onClick = openHelp) { Icon(Icons.Filled.HelpOutline, "Ajutor") }
             Box {
@@ -75,6 +79,21 @@ fun LibraryScreen(vm: AppViewModel, openRemote: (String) -> Unit, openHelp: () -
                         Text("Acest telefon nu are emițător IR. Poți organiza biblioteca, dar ai nevoie de un telefon cu IR blaster (ex. Xiaomi/Redmi/POCO) pentru a trimite comenzi. Atinge pentru detalii.",
                             style = MaterialTheme.typography.bodySmall)
                     }
+                }
+            }
+            Card(
+                Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth().clickable { openWizard() },
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+            ) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.AutoFixHigh, null, Modifier.size(32.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Ai pierdut telecomanda?", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        Text("Găsește automat codurile plafonierei din cele peste 160 de telecomenzi preinstalate.",
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                    Icon(Icons.Filled.ChevronRight, null)
                 }
             }
             OutlinedTextField(

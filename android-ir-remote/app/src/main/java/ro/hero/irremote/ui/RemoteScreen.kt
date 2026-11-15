@@ -26,7 +26,7 @@ import ro.hero.irremote.data.RemoteButton
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun RemoteScreen(vm: AppViewModel, remoteId: String, onBack: () -> Unit, onLearn: (String) -> Unit) {
+fun RemoteScreen(vm: AppViewModel, remoteId: String, onBack: () -> Unit, onLearn: (String) -> Unit, onWizard: () -> Unit) {
     val remotes by vm.repo.remotes.collectAsState()
     val remote = remotes.firstOrNull { it.id == remoteId }
     if (remote == null) { LaunchedEffect(Unit) { onBack() }; return }
@@ -86,7 +86,23 @@ fun RemoteScreen(vm: AppViewModel, remoteId: String, onBack: () -> Unit, onLearn
                         "Butoanele cu contur punctat nu au încă un cod. Atinge-le pentru a le clona. Apăsare lungă = editare."
                     else -> "Atinge un buton pentru a trimite comanda. Apăsare lungă = editare."
                 }
-                Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Column {
+                    if (remote.learnedCount == 0 && !editMode) {
+                        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                            Column(Modifier.padding(16.dp)) {
+                                Text("Telecomanda nu are încă coduri.", style = MaterialTheme.typography.titleSmall)
+                                Text("Fără telecomanda originală? Asistentul găsește codurile încercându-le pe lampă.",
+                                    style = MaterialTheme.typography.bodySmall)
+                                Spacer(Modifier.height(8.dp))
+                                Button(onClick = onWizard) {
+                                    Icon(Icons.Filled.AutoFixHigh, null); Spacer(Modifier.width(8.dp)); Text("Găsește codurile automat")
+                                }
+                            }
+                        }
+                    }
+                    Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             items(remote.buttons, key = { it.id }) { b ->
                 val learned = b.learned

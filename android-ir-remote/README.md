@@ -9,6 +9,13 @@ Aplicație gratuită (nu e publicată în magazin) pentru **clonarea telecomenzi
 3. Ai nevoie de un telefon **cu emițător IR** (ex. Xiaomi / Redmi / POCO, unele Huawei/Honor).
    Fără el, aplicația funcționează ca bibliotecă, dar nu poate trimite comenzi.
 
+## Nu ai telecomanda originală?
+Aplicația are **preinstalate 168 de telecomenzi IR pentru iluminat** (colecția publică
+[Flipper-IRDB](https://github.com/Lucaslhm/Flipper-IRDB), licență CC0), dintre care 43 pentru plafoniere / lumină
+albă reglabilă (Briloner, Globo, Paul Neuhaus, EGLO, Paulmann, Panasonic etc.).
+Apasă **„Ai pierdut telecomanda?”** pe ecranul principal: asistentul trimite pe rând comanda de stingere
+din fiecare set, iar tu apeși „DA” când lampa reacționează. Codurile găsite se salvează pe „Plafonieră Novecento”.
+
 ## Ce face
 - **Bibliotecă**: telecomenzi pe categorii (Iluminat, TV, AC…), căutare, backup/restore `.json`.
 - **Șabloane**: Plafonieră Novecento (Pornit/Oprit, luminozitate ±, alb cald/rece/neutru, noapte,
