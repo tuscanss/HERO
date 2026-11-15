@@ -69,6 +69,37 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         return r.id
     }
 
+    // ---------------- Asistentul „Ai pierdut telecomanda?” ----------------
+    // Progresul se păstrează și dacă ieși din ecran sau închizi aplicația.
+    private val wizardPrefs = app.getSharedPreferences("wizard", android.content.Context.MODE_PRIVATE)
+    private val _wizardIndex = MutableStateFlow(wizardPrefs.getInt("index", 0))
+    val wizardIndex = _wizardIndex.asStateFlow()
+    private val _wizardHistory = MutableStateFlow(
+        wizardPrefs.getString("history", "").orEmpty().split(',').mapNotNull { it.toIntOrNull() })
+    /** Ultimele variante trimise, cea mai recentă prima. */
+    val wizardHistory = _wizardHistory.asStateFlow()
+
+    fun setWizardIndex(i: Int) {
+        _wizardIndex.value = i.coerceAtLeast(0)
+        wizardPrefs.edit().putInt("index", _wizardIndex.value).apply()
+    }
+
+    /** Trimite comanda de test a variantei curente și o ține minte în istoric. */
+    fun wizardProbe() {
+        val sets = _codeSets.value ?: return
+        val i = _wizardIndex.value
+        val set = sets.getOrNull(i) ?: return
+        set.probeButton?.let { send(it.code, repeats = 2) }
+        _wizardHistory.value = (listOf(i) + _wizardHistory.value.filter { it != i }).take(15)
+        wizardPrefs.edit().putString("history", _wizardHistory.value.joinToString(",")).apply()
+    }
+
+    fun resetWizard() {
+        setWizardIndex(0)
+        _wizardHistory.value = emptyList()
+        wizardPrefs.edit().remove("history").apply()
+    }
+
     // ---------------- Căutătorul de coduri (scanare NEC) ----------------
     data class ScanState(
         val protocol: String = "NEC",

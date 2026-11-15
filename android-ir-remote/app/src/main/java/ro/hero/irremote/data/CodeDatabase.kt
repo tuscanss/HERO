@@ -26,6 +26,14 @@ data class CodeSet(
                 ?: codes.firstOrNull()
         }
 
+    /** Butonul care aprinde lampa (folosit ca s-o reaprindem după ce asistentul a stins-o). */
+    val onButton: IrFormats.NamedCode?
+        get() {
+            val order = listOf("on", "power_on", "poweron", "power", "on/off", "onoff", "light_on")
+            for (key in order) codes.firstOrNull { normalize(it.name) == key }?.let { return it }
+            return codes.firstOrNull { normalize(it.name).endsWith("_on") || normalize(it.name).contains("power") }
+        }
+
     fun toRemote(name: String, brandOverride: String? = null) = Remote(
         name = name,
         brand = brandOverride ?: if (brand == "Unknown") "" else brand,

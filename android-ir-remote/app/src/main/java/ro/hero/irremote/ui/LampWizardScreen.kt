@@ -14,19 +14,24 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import ro.hero.irremote.data.CodeSet
 
 /**
- * Asistent „Nu mai am telecomanda”: trimite pe rând comanda de stingere din fiecare
- * telecomandă de iluminat din baza preinstalată, până când lampa reacționează.
- * Seturile pentru plafoniere / lumină albă reglabilă sunt încercate primele.
+ * Asistent „Ai pierdut telecomanda?”: trimite pe rând comanda de stingere din fiecare
+ * telecomandă de iluminat preinstalată, până când lampa reacționează.
+ * Progresul și istoricul variantelor trimise se păstrează în ViewModel/preferințe,
+ * iar modul „Aprinde-o înapoi” încearcă comanda de pornire a ultimelor variante trimise.
  */
 @Composable
 fun LampWizardScreen(vm: AppViewModel, onBack: () -> Unit, onDone: (String) -> Unit) {
     val sets by vm.codeSets.collectAsState()
-    var index by rememberSaveable { mutableIntStateOf(0) }
-    var started by rememberSaveable { mutableStateOf(false) }
+    val index by vm.wizardIndex.collectAsState()
+    val history by vm.wizardHistory.collectAsState()
+    var started by rememberSaveable { mutableStateOf(history.isNotEmpty()) }
     var auto by remember { mutableStateOf(false) }
-    var found by rememberSaveable { mutableStateOf(false) }
+    var foundIndex by rememberSaveable { mutableIntStateOf(-1) }
+    /** Poziția în istoric când căutăm codul care a stins lampa (-1 = mod normal). */
+    var recoverPos by rememberSaveable { mutableIntStateOf(-1) }
 
     val list = sets
     AppScaffold(vm, "Găsește codurile lămpii", onBack = onBack) { pad ->
@@ -34,70 +39,113 @@ fun LampWizardScreen(vm: AppViewModel, onBack: () -> Unit, onDone: (String) -> U
             Box(Modifier.padding(pad).fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             return@AppScaffold
         }
-        val set = list.getOrNull(index)
-        fun sendProbe() { set?.probeButton?.let { vm.send(it.code, repeats = 2) } }
 
         LaunchedEffect(auto, index) {
             if (auto) {
-                sendProbe()
-                delay(2500)
-                if (index < list.lastIndex) index++ else auto = false
+                vm.wizardProbe()
+                delay(4000)
+                if (index < list.lastIndex) vm.setWizardIndex(index + 1) else auto = false
             }
         }
+        DisposableEffect(Unit) { onDispose { auto = false } }
+
+        fun sendOn(i: Int) { list.getOrNull(i)?.let { s -> (s.onButton ?: s.probeButton)?.let { vm.send(it.code, repeats = 2) } } }
 
         Column(Modifier.padding(pad).padding(16.dp).fillMaxSize().verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
+
+            // ---------- Am găsit setul ----------
+            list.getOrNull(foundIndex)?.let { set ->
+                Text("Super! Lampa răspunde la codurile:", style = MaterialTheme.typography.titleMedium)
+                Text(set.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text("Testează butoanele (de ex. „On”/„Power” ca s-o aprinzi). Dacă merg, salvează-le.",
+                    style = MaterialTheme.typography.bodyMedium)
+                CodeButtonsGrid(vm, set)
+                Button(onClick = { onDone(vm.applyToNovecento(set)) }, Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.Check, null); Spacer(Modifier.width(8.dp)); Text("Salvează ca „Plafonieră Novecento”")
+                }
+                OutlinedButton(onClick = { foundIndex = -1 }, Modifier.fillMaxWidth()) { Text("Nu merg bine – continuă căutarea") }
+                return@Column
+            }
+
+            // ---------- Aprinde-o înapoi: încercăm comanda de pornire a ultimelor variante ----------
+            if (recoverPos >= 0) {
+                val histIdx = history.getOrNull(recoverPos)
+                val set = histIdx?.let { list.getOrNull(it) }
+                Text("Aprindem lampa înapoi", style = MaterialTheme.typography.titleLarge)
+                Text("Încerc comanda de PORNIRE din variantele trimise recent (cea mai recentă prima). " +
+                    "Când se aprinde lampa, apasă „S-a aprins!” – aceea e telecomanda ta.")
+                if (set == null) {
+                    Text("Am încercat toate variantele recente. Aprinde lampa de la întrerupător (stinge, 5 secunde, aprinde) " +
+                        "și reia căutarea mai încet, fără modul automat.", color = MaterialTheme.colorScheme.error)
+                    OutlinedButton(onClick = { recoverPos = -1 }) { Text("Înapoi la căutare") }
+                    return@Column
+                }
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(20.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Recentă ${recoverPos + 1} din ${history.size}", style = MaterialTheme.typography.labelMedium)
+                        Text(set.title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+                        Text("Am trimis: „${(set.onButton ?: set.probeButton)?.name ?: "-"}”", style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.height(12.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Button(onClick = { foundIndex = histIdx; recoverPos = -1; vm.setWizardIndex(histIdx) }) { Text("S-a aprins!") }
+                            OutlinedButton(onClick = { recoverPos++; history.getOrNull(recoverPos)?.let(::sendOn) }) { Text("Nu, următoarea") }
+                        }
+                        TextButton(onClick = { sendOn(histIdx) }) { Icon(Icons.Filled.Replay, null); Spacer(Modifier.width(4.dp)); Text("Trimite din nou") }
+                    }
+                }
+                OutlinedButton(onClick = { recoverPos = -1 }) { Text("Anulează") }
+                return@Column
+            }
+
+            // ---------- Ecran de start ----------
             if (!started) {
                 Text("Nu ai telecomanda? Nicio problemă.", style = MaterialTheme.typography.titleLarge)
                 Text("Aplicația are preinstalate ${list.size} telecomenzi IR pentru corpuri de iluminat " +
-                    "(${list.count { it.likelyCeiling }} dintre ele pentru plafoniere / lumină albă reglabilă). " +
-                    "Le încercăm pe rând pe lampa ta.")
+                    "(${list.count { it.likelyCeiling }} pentru plafoniere / lumină albă reglabilă). Le încercăm pe rând pe lampa ta.")
                 ElevatedCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("Pregătire", fontWeight = FontWeight.Bold)
                         Text("1. Aprinde plafoniera de la întrerupătorul de perete și las-o aprinsă.")
                         Text("2. Stai sub lampă și îndreaptă muchia de sus a telefonului spre centrul ei.")
                         Text("3. La fiecare pas aplicația trimite comanda „Stinge”. Când lampa se stinge (sau clipește), apasă „DA”.")
+                        Text("Dacă lampa se stinge și n-ai apucat să apeși: nicio grijă, butonul „S-a stins lampa?” găsește varianta și o reaprinde. " +
+                            "Sau aprinde-o de la întrerupător (stinge, 5 secunde, aprinde).", style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 if (!vm.transmitter.hasEmitter) {
-                    Text("⚠️ Telefonul acesta nu are emițător IR, deci nu poate trimite comenzi.",
-                        color = MaterialTheme.colorScheme.error)
+                    Text("⚠️ Telefonul acesta nu are emițător IR, deci nu poate trimite comenzi.", color = MaterialTheme.colorScheme.error)
                 }
-                Button(onClick = { started = true; sendProbe() }, Modifier.fillMaxWidth()) {
-                    Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text("Începe")
+                Button(onClick = { started = true; vm.wizardProbe() }, Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(8.dp))
+                    Text(if (index > 0) "Continuă de la varianta ${index + 1}" else "Începe")
                 }
-                Text("Dacă nicio variantă nu funcționează, plafoniera folosește probabil o telecomandă radio (2.4 GHz), " +
-                    "nu infraroșu – și atunci nu poate fi controlată de un telefon. Soluția ar fi o telecomandă de schimb de la producător.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (index > 0) TextButton(onClick = { vm.resetWizard(); started = true; vm.wizardProbe() }) { Text("Ia-o de la capăt") }
                 return@Column
             }
 
+            val set: CodeSet? = list.getOrNull(index)
             if (set == null) {
                 Text("Am încercat toate cele ${list.size} variante.", style = MaterialTheme.typography.titleMedium)
                 Text("Lampa nu a reacționat la niciuna. Cel mai probabil plafoniera folosește o telecomandă radio (2.4 GHz). " +
                     "Poți încerca și „Căutătorul de coduri” (scanare NEC completă) sau o telecomandă de schimb Novecento.")
-                OutlinedButton(onClick = { index = 0 }) { Text("Ia-o de la capăt") }
+                OutlinedButton(onClick = { vm.resetWizard() }) { Text("Ia-o de la capăt") }
                 return@Column
             }
 
-            if (found) {
-                Text("Super! Lampa răspunde la codurile:", style = MaterialTheme.typography.titleMedium)
-                Text(set.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("Testează butoanele de mai jos. Dacă merg, salvează-le ca telecomanda plafonierei.",
-                    style = MaterialTheme.typography.bodyMedium)
-                CodeButtonsGrid(vm, set)
-                Button(onClick = { onDone(vm.applyToNovecento(set)) }, Modifier.fillMaxWidth()) {
-                    Icon(Icons.Filled.Check, null); Spacer(Modifier.width(8.dp)); Text("Salvează ca „Plafonieră Novecento”")
+            // Buton mereu vizibil: lampa s-a stins dar nu știu la care variantă
+            if (history.isNotEmpty()) {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+                    modifier = Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("S-a stins lampa și n-ai apucat să apeși DA?", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        Button(onClick = { auto = false; recoverPos = 0; sendOn(history.first()) }) { Text("Aprinde-o înapoi") }
+                    }
                 }
-                OutlinedButton(onClick = { found = false; index++; sendProbe() }, Modifier.fillMaxWidth()) {
-                    Text("Nu merg bine – continuă căutarea")
-                }
-                return@Column
             }
 
             LinearProgressIndicator(progress = { (index + 1f) / list.size }, Modifier.fillMaxWidth())
-            Text("Varianta ${index + 1} din ${list.size}", style = MaterialTheme.typography.labelMedium)
+            Text("Varianta ${index + 1} din ${list.size} • progresul se salvează", style = MaterialTheme.typography.labelMedium)
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(20.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Filled.Lightbulb, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
@@ -109,21 +157,23 @@ fun LampWizardScreen(vm: AppViewModel, onBack: () -> Unit, onDone: (String) -> U
                     Text("A reacționat lampa?", style = MaterialTheme.typography.titleLarge)
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(onClick = { auto = false; found = true }) { Text("DA") }
-                        OutlinedButton(onClick = { auto = false; index++; list.getOrNull(index)?.probeButton?.let { vm.send(it.code, 2) } }) {
-                            Text("NU, următoarea")
-                        }
+                        Button(onClick = { auto = false; foundIndex = index }) { Text("DA") }
+                        OutlinedButton(onClick = { auto = false; vm.setWizardIndex(index + 1); vm.wizardProbe() }) { Text("NU, următoarea") }
                     }
-                    TextButton(onClick = { sendProbe() }) { Icon(Icons.Filled.Replay, null); Spacer(Modifier.width(4.dp)); Text("Trimite din nou") }
+                    TextButton(onClick = { vm.wizardProbe() }) { Icon(Icons.Filled.Replay, null); Spacer(Modifier.width(4.dp)); Text("Trimite din nou") }
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Switch(checked = auto, onCheckedChange = { auto = it })
-                Spacer(Modifier.width(8.dp))
-                Text("Automat (câte o variantă la 2,5 s). Oprește imediat ce lampa reacționează, apoi verifică cu „Înapoi”.",
-                    style = MaterialTheme.typography.bodySmall)
+            if (auto) {
+                Button(onClick = { auto = false }, Modifier.fillMaxWidth().height(64.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
+                    Icon(Icons.Filled.Stop, null); Spacer(Modifier.width(8.dp)); Text("STOP – lampa a reacționat!")
+                }
+            } else {
+                OutlinedButton(onClick = { auto = true }, Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text("Automat (o variantă la 4 secunde)")
+                }
             }
-            if (index > 0) OutlinedButton(onClick = { auto = false; index--; list.getOrNull(index)?.probeButton?.let { vm.send(it.code, 2) } }) {
+            if (index > 0) OutlinedButton(onClick = { auto = false; vm.setWizardIndex(index - 1); vm.wizardProbe() }) {
                 Icon(Icons.Filled.SkipPrevious, null); Text("Înapoi o variantă")
             }
         }
@@ -131,13 +181,13 @@ fun LampWizardScreen(vm: AppViewModel, onBack: () -> Unit, onDone: (String) -> U
 }
 
 /** Grilă cu toate butoanele unui set; atingerea trimite codul. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun CodeButtonsGrid(vm: AppViewModel, set: ro.hero.irremote.data.CodeSet) {
-    @OptIn(ExperimentalLayoutApi::class)
+fun CodeButtonsGrid(vm: AppViewModel, set: CodeSet) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         set.codes.forEach { c ->
             FilledTonalButton(onClick = { vm.send(c.code) }) {
-                iconFor(ro.hero.irremote.data.CodeSet.guessIcon(c.name))?.let { Icon(it, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)) }
+                iconFor(CodeSet.guessIcon(c.name))?.let { Icon(it, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)) }
                 Text(c.name.replace('_', ' '))
             }
         }
